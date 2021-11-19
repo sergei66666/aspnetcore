@@ -28,6 +28,7 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers
         private readonly int _pageSize;
         private ViewBufferPage _currentPage;         // Limits allocation if the ViewBuffer has only one page (frequent case).
         private List<ViewBufferPage> _multiplePages; // Allocated only if necessary
+        private HashSet<ViewBufferPage> _multiplePagesIgnoreOnClear; // Pages in use in other View, shouldn't return them to the pool
 
         /// <summary>
         /// Initializes a new instance of <see cref="ViewBuffer"/>.
@@ -180,6 +181,21 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers
         /// <inheritdoc />
         public IHtmlContentBuilder Clear()
         {
+            for (var i = 0; i < Count; i++)
+            {
+                var page = this[i];
+                if (_multiplePagesIgnoreOnClear != null && _multiplePagesIgnoreOnClear.Contains(page))
+                {
+                    continue;
+                }
+
+                // It is done in MemoryPoolViewBufferScope.ReturnSegment.
+                // Is it correct to do it twice?
+                //Array.Clear(page.Buffer, 0, page.Count);
+
+                _bufferScope.ReturnSegment(page.Buffer);
+            }
+
             _multiplePages = null;
             _currentPage = null;
             return this;
@@ -340,19 +356,13 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers
                 }
             }
 
-            for (var i = 0; i < Count; i++)
-            {
-                var page = this[i];
-                Array.Clear(page.Buffer, 0, page.Count);
-                _bufferScope.ReturnSegment(page.Buffer);
-            }
-
             Clear();
         }
 
         private void MoveTo(ViewBuffer destination)
         {
-            for (var i = 0; i < Count; i++)
+            var count = Count;
+            for (var i = 0; i < count; i++)
             {
                 var page = this[i];
 
@@ -376,14 +386,21 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers
                     destinationPage.Count += page.Count;
 
                     // Now we can return the source page, and it can be reused in the scope of this request.
-                    Array.Clear(page.Buffer, 0, page.Count);
-                    _bufferScope.ReturnSegment(page.Buffer);
+                    //Array.Clear(page.Buffer, 0, page.Count);
+                    //_bufferScope.ReturnSegment(page.Buffer);
 
                 }
                 else
                 {
                     // Otherwise, let's just add the source page to the other buffer.
                     destination.AddPage(page);
+
+                    if (_multiplePagesIgnoreOnClear == null)
+                    {
+                        _multiplePagesIgnoreOnClear = new HashSet<ViewBufferPage>(count);
+                    }
+
+                    _multiplePagesIgnoreOnClear.Add(page);
                 }
 
             }

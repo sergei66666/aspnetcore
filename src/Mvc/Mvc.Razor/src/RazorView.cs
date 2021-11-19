@@ -112,6 +112,8 @@ namespace Microsoft.AspNetCore.Mvc.Razor
             _bufferScope = context.HttpContext.RequestServices.GetRequiredService<IViewBufferScope>();
             var bodyWriter = await RenderPageAsync(RazorPage, context, invokeViewStarts: true);
             await RenderLayoutAsync(context, bodyWriter);
+
+            bodyWriter.Buffer.Clear();
         }
 
         private async Task<ViewBufferTextWriter> RenderPageAsync(
@@ -291,6 +293,8 @@ namespace Microsoft.AspNetCore.Mvc.Razor
                     await bodyWriter.Buffer.WriteToAsync(writer, _htmlEncoder);
                     await writer.FlushAsync();
                 }
+
+                bodyWriter.Buffer.Clear();
             }
         }
 
